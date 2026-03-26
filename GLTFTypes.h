@@ -1,6 +1,6 @@
 #pragma once
 
-struct JointList_s
+struct Skeleton_s
 {
 	Joint_s* list = nullptr;
 	int count = 0;
@@ -18,8 +18,14 @@ struct TextureList_s
 	int count = 0;
 };
 
+struct MaterialList_s
+{
+	Material_s* list = nullptr;
+	int count = 0;
+};
 
-struct JointTrans_s
+
+struct JointPose_s
 {
 	DirectX::XMFLOAT3 translation = { 0, 0, 0 };
 	DirectX::XMFLOAT4 rotation = { 0, 0, 0, 1 };
@@ -40,16 +46,22 @@ struct JointTrans_s
 
 struct Joint_s
 {
-	DirectX::XMFLOAT4X4 inverseBindPose = {};
+	DirectX::XMFLOAT4X4 inveBindPose;
 	unsigned int parentIDX = 0;
-	eastl::string jointName;
-	eastl::string nodeId;
-	eastl::string jointId;
+	std::string jointName;
+	std::string nodeId;
+	std::string jointId;
+	JointPose_s localPose;
 };
 
 struct Texture_s
 {
+	bool hasUri = false;
 	WCHAR* fileName = nullptr;
+
+	uint8_t* data = nullptr;
+	int dataSize = 0;
+
 	DirectX::ScratchImage imageData;
 	DirectX::TexMetadata  imageMetaData;
 };
@@ -71,4 +83,14 @@ struct Mesh_s
 	ModelVertex_s* vertices = nullptr;
 	int indexCount = 0;
 	int vertexCount = 0;
+};
+
+struct Material_s
+{
+	WCHAR* name;
+
+	float baseColor[4] = { 1.0f, 1.0f, 1.0f, 1.0f};
+	float metallicFactor = 0;
+	float roughnessFactor = 0;
+	float emissiveFactor[3] = { 1.0f, 1.0f, 1.0f };
 };
