@@ -1,10 +1,19 @@
 // GraphicsProject.cpp : Defines the entry point for the application.
 
+#define NOMINMAX
+
 #include <chrono>
 
 #include "framework.h"
 #include "GraphicsProject.h"
 #include "D3DResources.h"
+#include "Camera.h"
+
+#include "GLTFTypes.h"
+#include "GLTFReader.h"
+
+#include "TestObject.h"
+
 
 #ifdef _DEBUG
 #pragma comment(linker, "/entry:wWinMainCRTStartup /subsystem:console")
@@ -12,7 +21,13 @@
 
 #define MAX_LOADSTRING 100
 
+// TODO : (IMP | LATER ) move this define to EntityResource Class 
+#define MODEL_PATH ("C://Users//james//source//Models//chisa//scene.gltf")
+
+
 typedef std::chrono::time_point<std::chrono::high_resolution_clock> timepoint_t;
+using namespace DirectX;
+
 
 // Global Variables:
 HINSTANCE hInst;                                // current instance
@@ -25,6 +40,21 @@ float g_RenderTime = 0;
 timepoint_t g_LastTime;
 
 D3DResources g_resource;
+Camera* g_cam = nullptr;
+
+GLTFReader g_Reader;
+
+TestObject testObject;
+
+
+XMMATRIX g_world;
+XMMATRIX g_view;
+XMMATRIX g_projection;
+
+// TODO : (IMP | LATER ) move this define to EntityResource Class 
+NodeList_s g_NodeList;
+MeshList_s g_MeshList;
+Skin_s g_Skin;
 
 
 
@@ -71,7 +101,8 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
     if (!InitObject())
     {
         goto LB_CLOSE;
-    }
+    }    
+
 
     // Main message loop:
     while (WM_QUIT != msg.message)
@@ -102,10 +133,70 @@ bool InitObject(void)
         goto LB_FAILED_INIT_RESOURCE;
     }
 
+    if (!g_Reader.Initialize(MODEL_PATH))
+    {
+        fprintf(stderr, "GLTFReader failed with error while reading %s\n", MODEL_PATH);
+        goto LB_FAILED_READ_MODEL_GLTF;
+    }
+
+    if (!g_Reader.GetMeshes(g_MeshList))
+    {
+        fprintf(stderr, "GetMesh failed with error\n");
+        goto LB_FAILED_GET_MESHLIST;
+    }
+
+    if (!g_Reader.GetNodes(g_NodeList))
+    {
+        fprintf(stderr, "GetNodes failed with error\n");
+        goto LB_FAILED_GET_NODES;
+    }
+
+
+    { // Setup Camera 
+        // TODO : (LATER) make camera system
+
+        XMFLOAT4 eye = { 0.0f, 0.0f, -3.0f, 0.0f };
+        XMFLOAT4 at  = { 0.0f, 0.0f, 0.0f, 0.0f };
+        XMFLOAT4 up  = { 0.0f, 1.0f, 0.0f, 0.0f };
+        g_cam = new Camera(eye, at, up);
+        g_cam->Initialize(g_resource);
+    }
+
+    if (!testObject.Initialize(g_resource, g_MeshList, g_NodeList))
+    {
+        fprintf(stderr, "testObject initialization failed with error\n");
+        goto LB_FAILED_TESTOBJ_INITIALIZE;
+    }
+    
 
     return true;
 
+LB_FAILED_TESTOBJ_INITIALIZE:
+    if (g_NodeList.count)
+    {
+        delete[] g_NodeList.list;
+        g_NodeList.list = nullptr;
+    }
+
+LB_FAILED_GET_NODES:
+    if (g_MeshList.count)
+    {
+        for (int i = 0; i < g_MeshList.count; ++i)
+        {
+            Mesh_s& mesh = g_MeshList.list[i];
+            delete[] mesh.indices;
+            delete[] mesh.vertices;
+        }
+        delete[] g_MeshList.list;
+        g_MeshList.list = nullptr;
+    }
+
+LB_FAILED_GET_MESHLIST:
+
+LB_FAILED_READ_MODEL_GLTF:
+
 LB_FAILED_INIT_RESOURCE:
+
     return false;
 }
 
@@ -113,26 +204,27 @@ LB_FAILED_INIT_RESOURCE:
 
 void RenderFrame(void)
 {
-    const static float BGWP_COLOR[] = { 0.0f, 0.0f, 0.0f, 1.0f };
+    const static float BGWP_COLOR[] = { 1.0f, 1.0f, 0.0f, 1.0f };
 
     ID3D11Device* device = g_resource.GetDevice();
     ID3D11DeviceContext* devContext = g_resource.GetContext();
+    ID3D11RenderTargetView* rtView = g_resource.GetRTView();
+    ID3D11DepthStencilView* dsView = g_resource.GetDepthStencilView();
     IDXGISwapChain* swapChain = g_resource.GetSwapChain();
 
-    devContext->ClearRenderTargetView(g_resource.GetRTView(), BGWP_COLOR);
-    devContext->ClearDepthStencilView(g_resource.GetDepthStencilView(), D3D11_CLEAR_DEPTH, 1.0f, 0);
+    devContext->ClearRenderTargetView(rtView, BGWP_COLOR);
+    devContext->ClearDepthStencilView(dsView, D3D11_CLEAR_DEPTH, 1.0f, 0);
 
-    g_resource.DrawBmp();
+    testObject.Draw(g_cam);
 
-    swapChain->Present(0, 0);
+    swapChain->Present(1, 0);
 }
 
 
 
 void CloseObjectHandles(void)
 {
-
-
+    g_resource.CloseD3DHandles();
 }
 
 
@@ -257,6 +349,31 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             // TODO: Add any drawing code that uses hdc here...
             EndPaint(hWnd, &ps);
         }
+        break;
+    case WM_CHAR:
+        switch(wParam)
+        {
+        case'w':
+        case'W':
+
+            break;
+        case'a':
+        case'A':
+
+            break;
+
+        case 's':
+        case 'S':
+
+            break;
+    
+        case'd':
+        case'D':
+
+            break;
+
+        }
+
         break;
     case WM_DESTROY:
         PostQuitMessage(0);

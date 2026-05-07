@@ -12,6 +12,9 @@
 #include <DirectXTex.h>
 #include <EASTL/vector.h>
 
+#define SAFE_RELEASE(p) {if(p != nullptr) {p->Release(); p = nullptr;}}
+
+
 constexpr float DELAY_TIME = 0.05F;
 
 struct Buf_s;
@@ -26,7 +29,8 @@ public:
 	bool Initialize(HWND hWnd);
 	void CloseD3DHandles(void);
 
-	void DrawBmp(void);
+	UINT GetWidth(void);
+	UINT GetHeight(void);
 
 	ID3D11Device*			GetDevice(void);
 	ID3D11DeviceContext*	GetContext(void);
@@ -34,10 +38,12 @@ public:
 	ID3D11VertexShader*		GetVShader(const int id);
 	ID3D11PixelShader*		GetPShader(const int id);
 	IDXGISwapChain*			GetSwapChain(void);
-	ID3D11InputLayout*		GetInputLayout(void) const;
+	ID3D11SamplerState*		GetSampler(void);
 	ID3D11DepthStencilView* GetDepthStencilView(void);
 
 
+	void AddVertexShader(LPCWSTR fileName, LPCSTR entryPoint, int& outID, ID3DBlob*& outBlob);
+	void AddPixelShader(LPCWSTR fileName, LPCSTR entryPoint, int& outID);
 
 	ID3DBlob*			BuildShaderBlob(const LPCWSTR fileName, const LPCSTR shaderModel);
 	ID3D11InputLayout*	CreateInputLayout(const D3D11_INPUT_ELEMENT_DESC* layout, UINT numElement, ID3DBlob* vsBlob) const;
@@ -45,32 +51,12 @@ public:
 
 private:
 
-	HRESULT loadTexture(void);
 	HRESULT compileShader(LPCWSTR fileName, LPCSTR entryPoint, LPCSTR shaderModel, ID3DBlob** blob);
 
-
-	bool createBmpTexture(void);
-	bool createVSAndPSAndInputLayout(void);
 	bool getMaxVideoAdapter(void);
 	bool createDeviceAndSwapChain(void);
 	bool createRenderTargets(void);
 	void createClientSizeViewPort(void);
-
-
-private:
-
-	struct Texture_s
-	{
-		WCHAR* fileName = nullptr;
-		DirectX::ScratchImage imageData;
-		DirectX::TexMetadata  imageMetaData;
-	};
-
-	struct Vertex_s
-	{
-		DirectX::XMFLOAT2 pos;
-		DirectX::XMFLOAT2 uv;
-	};
 
 private:
 
@@ -82,33 +68,16 @@ private:
 
 	IDXGISwapChain*			m_SwapChain = nullptr;
 	ID3D11Device*			m_Device = nullptr;
-	ID3D11DeviceContext*		m_DevContext = nullptr;
+	ID3D11DeviceContext*	m_DevContext = nullptr;
 	ID3D11RenderTargetView* m_RTView = nullptr;
 	IDXGIAdapter1*			m_Adapter = nullptr;
 
 	eastl::vector<ID3D11VertexShader*> m_VertexShaders = {};
 	eastl::vector<ID3D11PixelShader*>  m_PixelShaders = {};
-	ID3D11InputLayout*	m_InputLayout = nullptr;
-	ID3D11Buffer*		m_PixelBuffer = nullptr;
-	ID3D11Buffer*		m_VertexBuffer = nullptr;
 
-
-	ID3D11Texture2D*				m_Texture = nullptr;
-	ID3D11ShaderResourceView*	m_TextureRV = nullptr;
 	ID3D11SamplerState*			m_SamplerLinear = nullptr;
-	ID3D11Texture2D*				m_DepthStencil = nullptr;
+	ID3D11Texture2D*			m_DepthStencil = nullptr;
 	ID3D11DepthStencilView*		m_DepthStencilView = nullptr;
 
-	ID3D11Buffer* m_CBNeverChanges = nullptr;
-	ID3D11Buffer* m_CBChangeOnResize = nullptr;
-	ID3D11Buffer* m_CBChangesEveryFrame = nullptr;
-
-
-	eastl::vector<Texture_s> m_stagedTextures = {};
-	ID3D11ShaderResourceView* m_loadedTextureArray = nullptr;
-
 	UINT width = 0, height = 0;
-	Buf_s* m_rBuf = nullptr;
-	Buf_s* m_gBuf = nullptr;
-	Buf_s* m_bBuf = nullptr;
 };

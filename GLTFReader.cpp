@@ -1,3 +1,9 @@
+#include "GLTFTypes.h"
+#include "GLTFReader.h"
+
+#undef min
+#undef max
+
 #include <GLTFSDK/Deserialize.h>
 #include <GLTFSDK/GLTF.h>
 #include <GLTFSDK/GLTFResourceReader.h>
@@ -5,32 +11,45 @@
 
 #include <EASTL/map.h>
 #include <EASTL/vector.h>
-#include <EASTL/string.h>
-#include <EASTL/queue.h>
-
-#include <DirectXTex.h>
 
 #include <fstream>
-#include <string>
 #include <memory>
 #include <cassert>
 
-#include "GLTFTypes.h"
-#include "GLTFReader.h"
-
-#include <windows.h>
-
-
 using namespace DirectX;
 using namespace Microsoft::glTF;
+using namespace std;
+
+Microsoft::glTF::Document g_Document;
+std::unique_ptr<Microsoft::glTF::GLTFResourceReader> g_ResourceReader;
+
+const std::string BIN_PREFIX = "C://Users//james//source//Models//";
+
+// TODO : (LATER) basic reader handles all gltf files ( only read mesh )
+//         - Create seperate reader for character with skin and animation data ( read according to function call priority )
+
+
 
 class StreamReader : public IStreamReader
 {
 public:
+
+	StreamReader(const std::string& fullPath) {
+		size_t slashPos = fullPath.find("//", BIN_PREFIX.size());
+		std::string modelType = fullPath.substr(BIN_PREFIX.size(), slashPos - BIN_PREFIX.size());
+
+		m_baseModelPath = BIN_PREFIX + modelType + "//";
+	}
+
 	std::shared_ptr<std::istream> GetInputStream(const std::string& path) const override
 	{
-		return std::make_shared<std::ifstream>(path, std::ios::binary);
+		std::string finalModelPath = m_baseModelPath + path;
+		return std::make_shared<std::ifstream>(finalModelPath, std::ios::binary);
 	}
+
+private:
+
+	std::string m_baseModelPath;
 };
 
 
@@ -38,13 +57,14 @@ GLTFReader::GLTFReader(void) {}
 GLTFReader::~GLTFReader(void) {}
 
 
-void convertUTF8ToWChar(const std::string& inputString, Texture_s& outTex);
-
 
 bool GLTFReader::Initialize(const std::string& filePath)
 {
-	auto streamReader = std::make_shared<StreamReader>();
-	resourceReader = std::make_unique<GLTFResourceReader>(streamReader);
+
+	// TODO : (IMP) change bin path -> its only has file name not a path
+
+	auto streamReader = std::make_shared<StreamReader>(filePath);
+	g_ResourceReader = std::make_unique<GLTFResourceReader>(streamReader);
 
 	std::ifstream file(filePath);
 
@@ -54,8 +74,10 @@ bool GLTFReader::Initialize(const std::string& filePath)
 		return false;
 	}
 
-	int size = file.tellg();
+	file.seekg(0, std::ios::end);
+	std::streampos size = file.tellg();
 	file.seekg(0, std::ios::beg);
+
 	std::string content(size, '\0');
 
 	if (!file.read(&content[0], size))
@@ -64,59 +86,75 @@ bool GLTFReader::Initialize(const std::string& filePath)
 		return false;
 	}
 
-	document = Deserialize(content);
+	g_Document = Deserialize(content);
 
 	return true;
 }
 
 
 
-bool GLTFReader::GetMeshes(MeshList_s& outMesh, bool& hasOut)
+
+
+
+bool GLTFReader::GetNodes(NodeList_s& outList)
 {
-	// TODO : (IMP) code after understand file structure
-	// TODO : (IMP) read gltf instruction
-	
-	int nodeCount = document.nodes.Size();
-		
-
-
-	return true;
-}
-
-
-bool GLTFReader::GetSkinedMesh(MeshList_s& outMesh, bool& hasOut)
-{
-	if (!document.skins.Size())
+	if (!g_Document.nodes.Size())
 	{
-		fprintf(stderr, "skin size is 0 : NOT_SUPPORT_SKIN | HAS_NO_SKELETON\n");
-		hasOut = false;
+		fprintf(stderr, "GetNodes failed with error : NODE_SIZE_ZERO | INVALID_FILE\n");
 		return false;
 	}
 
-	const Skin& skin = document.skins.Get(0);
-	
-	int nodeCount = document.nodes.Size();
-	std::vector<const Node*> skinedNode;
-	skinedNode.reserve(nodeCount);
+	int nodeCount = g_Document.nodes.Size();
+
+	outList.count = nodeCount;
+	outList.list = new Node_s[nodeCount];
+	eastl::map<std::string, int> nodeMap;
 
 	for (int i = 0; i < nodeCount; ++i)
 	{
-		const Node& node = document.nodes.Get(i);
+		const Node& node = g_Document.nodes.Get(i);
+		Node_s& dstNode = outList.list[i];
 
-		if (node.skinId == skin.id)
+		dstNode.name = node.name.c_str();
+		nodeMap[node.id] = i;
+
+		if (!node.meshId.empty())
 		{
-			outMesh.count++;
-			skinedNode.push_back(&node);
+			dstNode.meshIDX = node.meshId.c_str();
+		}
+
+		if (!node.skinId.empty())
+		{
+			dstNode.skinIDX = node.skinId.c_str();
+		}
+
+		if (node.HasValidTransformType())
+		{
+			JointPose_s& pose = dstNode.localPose;
+
+			pose.translation = { node.translation.x, node.translation.y,  node.translation.z };
+			pose.rotation = { node.rotation.x, node.rotation.y, node.rotation.z, node.rotation.w };
+			pose.scale = node.scale.x;
+
+			dstNode.hasLocalPose = true;
 		}
 	}
 
-
-	outMesh.list = new Mesh_s[outMesh.count];
-
-	for (int i = 0; i < outMesh.count; ++i)
+	for (int i = 0; i < nodeCount; ++i)
 	{
-		const Node* node = skinedNode[i];
-		const Mesh& mesh = document.meshes.Get(node->meshId);
+		const Node& node = g_Document.nodes.Get(i);
+
+		if (!node.children.empty())
+		{
+			int childCount = node.children.size();
+
+			for (int j = 0; j < childCount; ++j)
+			{
+				int childIDX = nodeMap[node.children[j]];
+
+				outList.list[childIDX].parentIDX = i;
+			}
+		}
 	}
 
 
@@ -124,179 +162,181 @@ bool GLTFReader::GetSkinedMesh(MeshList_s& outMesh, bool& hasOut)
 }
 
 
-
-bool GLTFReader::GetSkeletons(Skeleton_s& outSkel, bool& hasOut)
+bool GLTFReader::GetMeshes(MeshList_s& outList)
 {
-	// TODO : (IMP) change method to support all gltf files
-	// TODO : (IMP) read gltf tutorial instruction to understand gltf structure
-
-	if (document.skins.Size() == 0)
+	if (!g_Document.meshes.Size())
 	{
-		printf("document Skin Size is 0 : NO_JOINTS | NO_BONS\n");
-		hasOut = false;
-		return true;
+		fprintf(stderr, "GetMeshes failed with error : MESH_SIZE_ZERO | INVALID_FILE\n");
+		return false;
 	}
 
-	const auto& skin = document.skins.Get(0);
-	std::vector<float> invBinMats;
+	// TODO : (IMP) fix error when read uint12 and uint32
+
+	int meshCount = g_Document.meshes.Size();
+
+	outList.count = meshCount;
+	outList.list = new Mesh_s[meshCount];
+
+
+	std::vector<float> norData;
+	std::vector<float> posData;
+	std::vector<float> texData;
+	std::vector<float> weightData;
+
+	std::vector<uint16_t> inputIndices16;
+	std::vector<uint32_t> inputIndices32;
+	std::vector<uint16_t> jointsData;
+
+	for (int i = 0; i < meshCount; ++i)
+	{
+		const Mesh& mesh = g_Document.meshes.Get(i);
+		Mesh_s& dstMesh = outList.list[i];
+
+		const auto& primitive = mesh.primitives;
+		const auto& attributes = primitive[0].attributes;
+
+		dstMesh.materialIDX = primitive[0].materialId.c_str();
+		
+
+		if (!primitive[0].indicesAccessorId.empty())
+		{
+			auto& indAcc = g_Document.accessors.Get(primitive[0].indicesAccessorId);
+
+			int indCount = indAcc.count;
+
+			dstMesh.indexCount = indCount;
+			dstMesh.indices = new uint32_t[indCount];
+
+			if (indAcc.componentType == ComponentType::COMPONENT_UNSIGNED_SHORT)
+			{
+				inputIndices16 = g_ResourceReader->ReadBinaryData<uint16_t>(g_Document, indAcc);
+				std::copy(inputIndices16.begin(), inputIndices16.end(), dstMesh.indices);
+			}
+			else
+			{
+				inputIndices32 = g_ResourceReader->ReadBinaryData<uint32_t>(g_Document, indAcc);
+				std::copy(inputIndices32.begin(), inputIndices32.end(), dstMesh.indices);
+			}
+		}
+
+		auto pPos = attributes.find("POSITION");
+		auto pNor = attributes.find("NORMAL");
+		auto pTex = attributes.find("TEXCOORD_0");
+		auto pWei = attributes.find("WEIGHTS_0");
+		auto pJoi = attributes.find("JOINTS_0");
+
+		if (pPos != attributes.end())
+		{
+			auto& posAcc = g_Document.accessors.Get(pPos->second);
+			posData = g_ResourceReader->ReadFloatData(g_Document, posAcc);
+
+			const int vertexCount = posAcc.count;
+
+			dstMesh.vertexCount = vertexCount;
+			dstMesh.vertices = new ModelVertex_s[vertexCount];
+	
+		}
+
+		if (pNor != attributes.end())
+		{
+			auto& norAcc = g_Document.accessors.Get(pNor->second);
+			norData = g_ResourceReader->ReadFloatData(g_Document, norAcc);
+		}
+
+		if (pTex != attributes.end())
+		{
+			auto& texAcc = g_Document.accessors.Get(pTex->second);
+			texData = g_ResourceReader->ReadFloatData(g_Document, texAcc);
+		}
+
+		if (pJoi != attributes.end())
+		{
+			auto& joiAcc = g_Document.accessors.Get(pJoi->second);
+			jointsData = g_ResourceReader->ReadBinaryData<uint16_t>(g_Document, joiAcc);
+		}
+
+		if (pWei != attributes.end())
+		{
+			auto& weiAcc = g_Document.accessors.Get(pWei->second);
+			weightData = g_ResourceReader->ReadFloatData(g_Document, weiAcc);
+		}
+
+
+
+		for (int i = 0; i < dstMesh.vertexCount; ++i)
+		{
+			ModelVertex_s& vertex = dstMesh.vertices[i];
+
+			if (!posData.empty())
+			{
+				vertex.position = { posData.at(i * 3), posData.at(i * 3 + 1), posData.at(i * 3 + 2), 1.0f };
+			}
+
+			if (!norData.empty())
+			{
+				vertex.normal = { norData.at(i * 3), norData.at(i * 3 + 1), norData.at(i * 3 + 2), 0.0f };
+			}
+
+			if (!texData.empty())
+			{
+				vertex.uv = { texData.at(i * 2), texData.at(i * 2 + 1) };
+			}
+
+			if (!jointsData.empty())
+			{
+				vertex.joints = { jointsData.at(i * 3), jointsData.at(i * 3 + 1), jointsData.at(i * 3 + 2), 1 };
+			}
+		}
+
+		inputIndices16.clear();
+		inputIndices32.clear();
+		weightData.clear();
+		posData.clear();
+		norData.clear();
+		texData.clear();
+	}
+
+
+	return true;
+}
+
+
+bool GLTFReader::GetSkins(Skin_s& outList)
+{
+	if (!g_Document.skins.Size())
+	{
+		fprintf(stderr, "skin size is 0 : FILE_NOT_CONTAIN_SKIN | NO_JOINT \n");
+		return false;
+	}
+
+	const Skin& skin = g_Document.skins.Get(0);
+	std::vector<float> invMatData;
 
 	if (!skin.inverseBindMatricesAccessorId.empty())
 	{
-		const Accessor& accessor = document.accessors.Get(skin.inverseBindMatricesAccessorId);
-		invBinMats = resourceReader->ReadFloatData(document, accessor);
+		const std::string invMatID = skin.inverseBindMatricesAccessorId;
+		const Accessor& invAcc = g_Document.accessors.Get(invMatID);
+
+		invMatData = g_ResourceReader->ReadFloatData(g_Document, invAcc);
 	}
+	
+	const int jointCount = skin.jointIds.size();
+	outList.jointNodeCount = jointCount;
+	outList.jointNodeIndices = new int[outList.jointNodeCount];
+	outList.invBindPoses = new XMFLOAT4X4[outList.jointNodeCount];
 
-	outSkel.count = skin.jointIds.size();
-	outSkel.list = new Joint_s[outSkel.count];
-
-	eastl::map<std::string, int> jointHierachy;
-
-	for (int i = 0; i < outSkel.count; ++i)
+	for (int i = 0; i < jointCount; ++i)
 	{
-		const Node& node = document.nodes.Get(skin.jointIds[i]);
-		Joint_s& joint = outSkel.list[i];
+		XMFLOAT4X4& dstInvMat = outList.invBindPoses[i];
+		int& dstJointNode = outList.jointNodeIndices[i];
 
-		if (invBinMats.size() >= (size_t)(i + 1) * 16)
+		if (!invMatData.empty())
 		{
-			memcpy(&joint.inveBindPose, &invBinMats[i * 16], sizeof(XMFLOAT4X4));
+			memcpy(&dstInvMat, &invMatData.at(i * 16), sizeof(float) * 16);
 		}
-		else
-		{
-			memcpy(&joint.inveBindPose, &XMMatrixIdentity(), sizeof(XMFLOAT4X4));
-		}
-		
-		jointHierachy[skin.jointIds[i]] = i;
-		joint.jointId = skin.jointIds[i];
-		joint.nodeId = node.id;
-		joint.jointName = node.name;
-		joint.parentIDX = 0;
 
-		joint.localPose.translation = { node.translation.x, node.translation.y, node.translation.z };
-		joint.localPose.rotation = { node.rotation.x, node.rotation.y, node.rotation.z, node.rotation.w };
-		joint.localPose.scale = node.scale.x;
-	}
-
-	Joint_s* list = outSkel.list;
-	for (int i = 0; i < outSkel.count; ++i)
-	{
-		const Node& node = document.nodes.Get(skin.jointIds[i]);
-		
-		for (const auto& childNodeId : node.children)
-		{
-			Joint_s* child = &list[jointHierachy[childNodeId]];
-			child->parentIDX = i;
-		}
+		dstJointNode = std::stoi(skin.jointIds.at(i));
 	}
 
 	return true;
-}
-
-
-
-bool GLTFReader::GetTextures(TextureList_s& outTex, bool& hasOut)
-{
-	// TODO : (IMP) seperate texture and material reading method
-	// TODO : (IMP) find no uri image texture -> Read my past parser_gltf code
-
-	if (document.images.Size() == 0)
-	{
-		printf("document image size is 0 : NO_TEXTURE | NO_IMAGE \n");
-		hasOut = false;
-		return true;
-	}
-
-	int imageCount = document.images.Size();
-
-	outTex.list = new Texture_s[imageCount];
-	outTex.count = imageCount;
-
-	for (int i = 0; i < imageCount; ++i)
-	{
-		const auto& image = document.images.Get(i);
-		Texture_s& texNode = outTex.list[i];
-
-		if (!image.uri.empty())
-		{
-			texNode.hasUri = true;
-			convertUTF8ToWChar(image.uri, texNode);
-		}
-		else if (!image.bufferViewId.empty())
-		{
-			std::vector<uint8_t> binImageData = resourceReader->ReadBinaryData(document, image);
-			
-			texNode.hasUri = false;
-			texNode.dataSize = binImageData.size();
-			texNode.data = new uint8_t[texNode.dataSize];
-			
-			memcpy(texNode.data, binImageData.data(), texNode.dataSize);
-		}
-
-	}
-
-	return true;
-}
-
-bool GLTFReader::GetMaterials(MaterialList_s& outMat, bool& hasOut)
-{
-	if (document.materials.Size() == 0)
-	{
-		printf("materials size is 0 : NO_MATERIAL\n");
-		hasOut = false;
-		return true;
-	}
-
-	int matCount = document.materials.Size();
-	outMat.count = matCount;
-	outMat.list = new Material_s[matCount];
-
-	for (int i = 0; i < matCount; ++i)
-	{
-		const auto& material = document.materials.Get(i);
-		Material_s& matNode = outMat.list[i];
-
-		matNode.baseColor[0] = material.metallicRoughness.baseColorFactor.r;
-		matNode.baseColor[1] = material.metallicRoughness.baseColorFactor.g;
-		matNode.baseColor[2] = material.metallicRoughness.baseColorFactor.b;
-		matNode.baseColor[3] = material.metallicRoughness.baseColorFactor.a;
-
-		matNode.metallicFactor = material.metallicRoughness.metallicFactor;
-		matNode.emissiveFactor[0] = material.emissiveFactor.r;
-		matNode.emissiveFactor[1] = material.emissiveFactor.g;
-		matNode.emissiveFactor[2] = material.emissiveFactor.b;
-	}
-}
-
-
-
-
-
-
-
-
-
-
-std::string GLTFReader::getAccIDX(const std::string& attr, MeshPrimitive& primi)
-{
-	auto target = primi.attributes.find(attr);
-	if (target == primi.attributes.end()) return nullptr;
-	else return target->second;
-}
-
-uint8_t* GLTFReader::getRawData(const Accessor& acc)
-{
-	const BufferView& bv = document.bufferViews.Get(acc.bufferViewId);
-	const Buffer& b = document.buffers.Get(bv.bufferId);
-	const auto binrayStream = resourceReader->ReadBinaryData<float>(document, acc);
-}
-
-
-
-void convertUTF8ToWChar(const std::string& inputString, Texture_s& outTex)
-{
-	int size = MultiByteToWideChar(CP_UTF8, 0, inputString.c_str(), inputString.length(), nullptr, 0);
-
-	outTex.fileName = new WCHAR[size];
-
-	MultiByteToWideChar(CP_UTF8, 0, inputString.c_str(), inputString.length(), outTex.fileName, size);
-	outTex.fileName[size] = L'\0';
 }
