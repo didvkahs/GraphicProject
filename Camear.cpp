@@ -66,8 +66,8 @@ void Camera::Update(const float& deltaTime, MoveCam_e type)
     if (type == MOV_BACK)    vpos -= vforward * speed;
     if (type == MOV_RIGHT)   vpos += vright * speed;
     if (type == MOV_LEFT)    vpos -= vright * speed;
-    if (type == MOV_UP)      vpos += worldUp * speed; 
-    if (type == MOV_DOWN)    vpos -= worldUp * speed;
+    if (type == MOV_UP)      vpos += vup * speed; 
+    if (type == MOV_DOWN)    vpos -= vup * speed;
 
     XMStoreFloat4(&m_position, vpos);
     XMStoreFloat4(&m_forward, vforward);
@@ -76,7 +76,6 @@ void Camera::Update(const float& deltaTime, MoveCam_e type)
 
     XMMATRIX view = XMMatrixLookAtLH(vpos, XMVectorAdd(vpos, vforward), vup);
     view = XMMatrixTranspose(view);
-    XMStoreFloat4x4(&m_view, view);
 
     HRESULT hr = S_OK;
     ID3D11DeviceContext* devcon = m_Resource->GetContext();
@@ -89,9 +88,15 @@ void Camera::Update(const float& deltaTime, MoveCam_e type)
         fprintf(stderr, "map cbview failed with error\n");
     }
 
-    memcpy(mappedResource.pData, &m_view, sizeof(XMFLOAT4X4));
+    memcpy(mappedResource.pData, &view, sizeof(XMFLOAT4X4));
 
     devcon->Unmap(m_CBView, 0);
+}
+
+void Camera::UpdateYawPitch(const float& deltaTime, int yaw, int pitch)
+{
+    m_Yaw += yaw * deltaTime * MOUSE_SPEED;
+    m_Pitch += pitch * deltaTime * MOUSE_SPEED;
 }
 
 

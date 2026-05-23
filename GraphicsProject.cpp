@@ -46,6 +46,8 @@ HWND hWnd;
 
 // Cam moving flags
 bool g_MoveState[MOV_COUNT];
+POINT g_MouseCenter;
+int g_MouseX, g_MouseY;
 
 float g_DeltaTime = 0;
 float g_RenderTime = 0;
@@ -171,12 +173,16 @@ bool InitObject(void)
    
     {
         RECT rect;
-        POINT center;
+        
         GetClientRect(hWnd, &rect);
-        center.x = (rect.right - rect.left) / 2;
-        center.y = (rect.bottom - rect.top) / 2;
-        ClientToScreen(hWnd, &center);
-        SetCursorPos(center.x, center.y);
+        g_MouseCenter.x = (rect.right - rect.left) / 2;
+        g_MouseCenter.y = (rect.bottom - rect.top) / 2;
+        ClientToScreen(hWnd, &g_MouseCenter);
+        SetCursorPos(g_MouseCenter.x, g_MouseCenter.y);
+
+        g_MoveState[MOV_MOUSE] = false;
+        g_MouseX = g_MouseCenter.x;
+        g_MouseY = g_MouseCenter.y;
     }
 
 
@@ -220,6 +226,11 @@ void Update(void)
     if (g_MoveState[MOV_LEFT])
     {
         g_cam->Update(g_DeltaTime, MOV_LEFT);
+    }
+    if (g_MoveState[MOV_MOUSE])
+    {
+        g_cam->UpdateYawPitch(g_DeltaTime, g_MouseX, g_MouseY);
+        g_cam->Update(g_DeltaTime, MOV_COUNT);
     }
 }
 
@@ -392,6 +403,22 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
         
         }
         break;
+    case WM_MOUSEMOVE:
+        if (g_MoveState[MOV_MOUSE])
+        {
+            POINT pos;
+            GetCursorPos(&pos);
+            ScreenToClient(hWnd, &pos);
+
+            g_MouseX = (pos.x - g_MouseCenter.x);
+            g_MouseY = (pos.y - g_MouseCenter.y);
+
+            POINT center = g_MouseCenter;
+            ClientToScreen(hWnd, &center);
+            SetCursorPos(center.x, center.y);
+        }
+
+        break;
     case WM_KEYDOWN:
         switch (wParam)
         {
@@ -400,6 +427,27 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             break;
         case VK_SPACE:
             g_MoveState[MOV_UP] = true;
+            break;
+        case VK_TAB:
+            g_MoveState[MOV_MOUSE] = !g_MoveState[MOV_MOUSE];
+            ShowCursor(!g_MoveState[MOV_MOUSE]);
+
+            if (g_MoveState[MOV_MOUSE])
+            {
+                RECT rect;
+                GetClientRect(hWnd, &rect);
+
+                g_MouseCenter.x = (rect.right - rect.left) / 2;
+                g_MouseCenter.y = (rect.bottom - rect.top) / 2;
+
+                POINT center = g_MouseCenter;
+                ClientToScreen(hWnd, &center);
+                SetCursorPos(center.x, center.y);
+
+                g_MouseX = 0;
+                g_MouseY = 0;
+            }
+
             break;
         case 'W':
         case 'w':

@@ -13,6 +13,7 @@ enum MoveCam_e
 	MOV_LEFT,
 	MOV_UP,
 	MOV_DOWN,
+	MOV_MOUSE,
 	MOV_COUNT
 };
 
@@ -26,6 +27,7 @@ public:
 	bool Initialize(D3DResources& resource);
 
 	void Update(const float& deltaTime, MoveCam_e type);
+	void UpdateYawPitch(const float& deltaTime, int yaw, int pitch);
 
 	ID3D11Buffer* GetCBWorld(void) const;
 	ID3D11Buffer* GetCBView(void) const;
@@ -36,13 +38,12 @@ public:
 private:
 
 	void setWorld(void);
-	void setView(void); // TODO : (IMP | RM) remove this function after render GLTF model
 	void setProjection(void);
 	bool createBuffer(void);
 
 private:
 	const float CAM_SPEED = 0.6f;
-	const float MOUSE_SPEED = 0.6f;
+	const float MOUSE_SPEED = 0.1f;
 	
 	D3DResources* m_Resource = nullptr;
 
@@ -54,6 +55,8 @@ private:
 	ID3D11Buffer* m_CBView = nullptr;
 	ID3D11Buffer* m_CBProjection = nullptr;
 
+	float m_currYaw = 0.0f;
+	float m_currPitch = 0.0f;
 	float m_Yaw = 0.0f;
 	float m_Pitch = 0.0f;
 
