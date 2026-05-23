@@ -10,9 +10,10 @@
 #include "Camera.h"
 
 #include "GLTFTypes.h"
-#include "GLTFReader.h"
+#include "EntityResource.h"
 
 #include "TestObject.h"
+
 
 
 #ifdef _DEBUG
@@ -21,12 +22,19 @@
 
 #define MAX_LOADSTRING 100
 
-// TODO : (IMP | LATER ) move this define to EntityResource Class 
-#define MODEL_PATH ("C://Users//james//source//Models//chisa//scene.gltf")
-
-
 typedef std::chrono::time_point<std::chrono::high_resolution_clock> timepoint_t;
 using namespace DirectX;
+
+
+// TODO LISTS
+// 1. make available camera movement 
+// 2. read original image of models 
+// 3. read animation of gltf files
+//    -> write compute shader to available model animation
+
+
+
+
 
 
 // Global Variables:
@@ -35,14 +43,24 @@ WCHAR szTitle[MAX_LOADSTRING];                  // The title bar text
 WCHAR szWindowClass[MAX_LOADSTRING];            // the main window class name
 HWND hWnd;
 
+
+// Cam moving flags
+bool g_MoveState[MOV_COUNT];
+
 float g_DeltaTime = 0;
 float g_RenderTime = 0;
 timepoint_t g_LastTime;
 
+float g_FPSTimer = 0.0f;
+int g_FrameCount = 0;
+
+
 D3DResources g_resource;
 Camera* g_cam = nullptr;
 
-GLTFReader g_Reader;
+EntityResource* g_chisaResource = nullptr;
+EntityResource* g_mudaResource = nullptr;
+EntityResource* g_dekuResource = nullptr;
 
 TestObject testObject;
 
@@ -51,16 +69,12 @@ XMMATRIX g_world;
 XMMATRIX g_view;
 XMMATRIX g_projection;
 
-// TODO : (IMP | LATER ) move this define to EntityResource Class 
-NodeList_s g_NodeList;
-MeshList_s g_MeshList;
-Skin_s g_Skin;
-
 
 
 
 // Forward declarations of functions included in this code module:
 bool InitObject(void);
+void Update(void);
 void RenderFrame(void);
 void CloseObjectHandles(void);
 void UpdateDeltaTime(void);
@@ -115,6 +129,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
             DispatchMessage(&msg);
         }
 
+        Update();
         RenderFrame();
     }
     
@@ -130,76 +145,83 @@ bool InitObject(void)
     if (!g_resource.Initialize(hWnd))
     {
         fprintf(stderr, "Resource Initialization failed \n");
-        goto LB_FAILED_INIT_RESOURCE;
+        goto LB_FAILED_RESOURCE_INITIALIZE;
     }
 
-    if (!g_Reader.Initialize(MODEL_PATH))
-    {
-        fprintf(stderr, "GLTFReader failed with error while reading %s\n", MODEL_PATH);
-        goto LB_FAILED_READ_MODEL_GLTF;
-    }
-
-    if (!g_Reader.GetMeshes(g_MeshList))
-    {
-        fprintf(stderr, "GetMesh failed with error\n");
-        goto LB_FAILED_GET_MESHLIST;
-    }
-
-    if (!g_Reader.GetNodes(g_NodeList))
-    {
-        fprintf(stderr, "GetNodes failed with error\n");
-        goto LB_FAILED_GET_NODES;
-    }
-
+    g_chisaResource = new EntityResource(MODEL_CHISA);
+    g_mudaResource = new EntityResource(MODEL_MUDA);
 
     { // Setup Camera 
         // TODO : (LATER) make camera system
 
-        XMFLOAT4 eye = { 0.0f, 0.0f, -3.0f, 0.0f };
-        XMFLOAT4 at  = { 0.0f, 0.0f, 0.0f, 0.0f };
-        XMFLOAT4 up  = { 0.0f, 1.0f, 0.0f, 0.0f };
-        g_cam = new Camera(eye, at, up);
-        g_cam->Initialize(g_resource);
+       
+        g_cam = new Camera();
+        if (!g_cam->Initialize(g_resource))
+        {
+            fprintf(stderr, "cam initialization failed with error\n");
+            goto LB_FAILED_CAM_INITIALIZE;
+        }
     }
 
-    if (!testObject.Initialize(g_resource, g_MeshList, g_NodeList))
+    if (!testObject.Initialize(g_resource, *g_mudaResource))
     {
         fprintf(stderr, "testObject initialization failed with error\n");
         goto LB_FAILED_TESTOBJ_INITIALIZE;
     }
-    
+   
+    {
+        RECT rect;
+        POINT center;
+        GetClientRect(hWnd, &rect);
+        center.x = (rect.right - rect.left) / 2;
+        center.y = (rect.bottom - rect.top) / 2;
+        ClientToScreen(hWnd, &center);
+        SetCursorPos(center.x, center.y);
+    }
+
 
     return true;
 
 LB_FAILED_TESTOBJ_INITIALIZE:
-    if (g_NodeList.count)
-    {
-        delete[] g_NodeList.list;
-        g_NodeList.list = nullptr;
-    }
+    g_cam->CloseCameraHandles();
+    delete g_cam;
 
-LB_FAILED_GET_NODES:
-    if (g_MeshList.count)
-    {
-        for (int i = 0; i < g_MeshList.count; ++i)
-        {
-            Mesh_s& mesh = g_MeshList.list[i];
-            delete[] mesh.indices;
-            delete[] mesh.vertices;
-        }
-        delete[] g_MeshList.list;
-        g_MeshList.list = nullptr;
-    }
+LB_FAILED_CAM_INITIALIZE:
+    g_resource.CloseD3DHandles();
 
-LB_FAILED_GET_MESHLIST:
-
-LB_FAILED_READ_MODEL_GLTF:
-
-LB_FAILED_INIT_RESOURCE:
+LB_FAILED_RESOURCE_INITIALIZE:
 
     return false;
 }
 
+
+void Update(void)
+{
+    if (g_MoveState[MOV_DOWN])
+    {
+        g_cam->Update(g_DeltaTime, MOV_DOWN);
+    }
+    if (g_MoveState[MOV_UP])
+    {
+        g_cam->Update(g_DeltaTime, MOV_UP);
+    }
+    if (g_MoveState[MOV_FORWARD])
+    {
+        g_cam->Update(g_DeltaTime, MOV_FORWARD);
+    }
+    if (g_MoveState[MOV_BACK])
+    {
+        g_cam->Update(g_DeltaTime, MOV_BACK);
+    }
+    if (g_MoveState[MOV_RIGHT])
+    {
+        g_cam->Update(g_DeltaTime, MOV_RIGHT);
+    }
+    if (g_MoveState[MOV_LEFT])
+    {
+        g_cam->Update(g_DeltaTime, MOV_LEFT);
+    }
+}
 
 
 void RenderFrame(void)
@@ -217,7 +239,7 @@ void RenderFrame(void)
 
     testObject.Draw(g_cam);
 
-    swapChain->Present(1, 0);
+    swapChain->Present(0, 0);
 }
 
 
@@ -237,6 +259,19 @@ void UpdateDeltaTime(void)
     if (g_DeltaTime > 0.1f)
     {
         g_DeltaTime = 0.1f;
+    }
+
+    g_FPSTimer += g_DeltaTime;
+    ++g_FrameCount;
+
+    if (g_FPSTimer >= 1.0f)
+    {
+        float fps = g_FrameCount / g_FPSTimer;
+
+        printf("%.1f fps \n", fps);
+
+        g_FPSTimer = 0;
+        g_FrameCount = 0;
     }
 
     g_LastTime = currentTime;
@@ -323,6 +358,7 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
 //
 LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 {
+
     switch (message)
     {
     case WM_COMMAND:
@@ -351,37 +387,76 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
         }
         break;
     case WM_CHAR:
-        switch(wParam)
+        switch (wParam)
         {
-        case'w':
-        case'W':
-
-            break;
-        case'a':
-        case'A':
-
-            break;
-
-        case 's':
-        case 'S':
-
-            break;
-    
-        case'd':
-        case'D':
-
-            break;
-
+        
         }
-
         break;
+    case WM_KEYDOWN:
+        switch (wParam)
+        {
+        case VK_SHIFT:
+            g_MoveState[MOV_DOWN] = true;
+            break;
+        case VK_SPACE:
+            g_MoveState[MOV_UP] = true;
+            break;
+        case 'W':
+        case 'w':
+            g_MoveState[MOV_FORWARD] = true;
+            break;
+        case 'A':
+        case 'a':
+            g_MoveState[MOV_LEFT] = true;
+            break;
+        case 'S':
+        case 's':
+            g_MoveState[MOV_BACK] = true;
+            break;
+        case 'D':
+        case 'd':
+            g_MoveState[MOV_RIGHT] = true;
+            break;
+        }
+        break;
+
+    case WM_KEYUP:
+        switch (wParam)
+        {
+        case VK_SHIFT:
+            g_MoveState[MOV_DOWN] = false;
+            break;
+        case VK_SPACE:
+            g_MoveState[MOV_UP] = false;
+            break;
+        case 'W':
+        case 'w':
+            g_MoveState[MOV_FORWARD] = false;
+            break;
+        case 'A':
+        case 'a':
+            g_MoveState[MOV_LEFT] = false;
+            break;
+        case 'S':
+        case 's':
+            g_MoveState[MOV_BACK] = false;
+            break;
+        case 'D':
+        case 'd':
+            g_MoveState[MOV_RIGHT] = false;
+            break;
+        }       
+        break;
+    
     case WM_DESTROY:
         PostQuitMessage(0);
         break;
     default:
         return DefWindowProc(hWnd, message, wParam, lParam);
     }
+
     return 0;
+
 }
 
 // Message handler for about box.

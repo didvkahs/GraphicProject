@@ -6,6 +6,8 @@
 
 #include "TestObject.h"
 
+#include "EntityResource.h"
+
 #include <iostream>
 
 using namespace DirectX;
@@ -19,11 +21,20 @@ constexpr int IMG_HEIGHT = 512;
 TestObject::TestObject(void) {}
 TestObject::~TestObject(void) {}
 
-bool TestObject::Initialize(D3DResources& resource, MeshList_s meshList, NodeList_s nodeList)
+bool TestObject::Initialize(D3DResources& resource, EntityResource& entityResource)
 {
 	m_Resource = resource;
-	m_meshList = meshList;
-	m_nodeList = nodeList;
+	
+	int meshCount = entityResource.meshList.count;
+	m_meshList.list = new Mesh_s[meshCount];
+	m_meshList.count = meshCount;
+	memcpy(m_meshList.list, entityResource.meshList.list, sizeof(Mesh_s) * meshCount);
+
+	int nodeCount = entityResource.nodeList.count;
+	m_nodeList.list = new Node_s[nodeCount];
+	m_nodeList.count = nodeCount;
+	memcpy(m_nodeList.list, entityResource.nodeList.list, sizeof(Node_s) * nodeCount);
+
 
 	if (!createBuffer())
 	{
@@ -113,6 +124,20 @@ void TestObject::CloseObjectHandles(void)
 
 	SAFE_RELEASE(m_VertexBuffer);
 	SAFE_RELEASE(m_IndexBuffer);
+
+	if (m_meshList.list)
+	{
+		delete[] m_meshList.list;
+		m_meshList.list = nullptr;
+		m_meshList.count = 0;
+	}
+
+	if (m_nodeList.list)
+	{
+		delete[] m_nodeList.list;
+		m_nodeList.list = nullptr;
+		m_nodeList.count = 0;
+	}
 
 	if (m_IndexCount) 
 	{ 

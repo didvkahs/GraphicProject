@@ -23,7 +23,7 @@ using namespace std;
 Microsoft::glTF::Document g_Document;
 std::unique_ptr<Microsoft::glTF::GLTFResourceReader> g_ResourceReader;
 
-const std::string BIN_PREFIX = "C://Users//james//source//Models//";
+const std::string BIN_PREFIX = ".//assets//Models//";
 
 // TODO : (LATER) basic reader handles all gltf files ( only read mesh )
 //         - Create seperate reader for character with skin and animation data ( read according to function call priority )

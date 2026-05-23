@@ -12,7 +12,8 @@ enum MoveCam_e
 	MOV_RIGHT,
 	MOV_LEFT,
 	MOV_UP,
-	MOV_DOWN
+	MOV_DOWN,
+	MOV_COUNT
 };
 
 
@@ -40,7 +41,8 @@ private:
 	bool createBuffer(void);
 
 private:
-	const float CAM_SPEED = 1.0f;
+	const float CAM_SPEED = 0.6f;
+	const float MOUSE_SPEED = 0.6f;
 	
 	D3DResources* m_Resource = nullptr;
 

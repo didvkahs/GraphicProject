@@ -1,6 +1,7 @@
 #pragma once
 
 class D3DResrouces;
+class EntityResource;
 
 enum VertexShaderID_e
 {
@@ -24,7 +25,7 @@ public:
 	TestObject(void);
 	~TestObject(void);
 
-	bool Initialize(D3DResources& resource, MeshList_s meshList, NodeList_s nodeList);
+	bool Initialize(D3DResources& resource, EntityResource& entitiyResource);
 
 	void Update(void);
 	void Draw(Camera* cam);
@@ -49,6 +50,9 @@ private:
 private:
 
 	D3DResources m_Resource;
+	
+	MeshList_s m_meshList;
+	NodeList_s m_nodeList;
 
 	ID3D11InputLayout* m_InputLayout = nullptr;
 	ID3D11ShaderResourceView* m_SRVs[VS_COUNT];
@@ -69,7 +73,4 @@ private:
 	int m_psIDs[PS_COUNT];
 	VertexShaderID_e m_currVSID = VS_DEFAULT;
 	PixelShaderID_e m_currPSID = PS_DEFAULT;
-
-	MeshList_s m_meshList;
-	NodeList_s m_nodeList;
 };
