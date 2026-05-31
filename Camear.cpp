@@ -32,7 +32,6 @@ Camera::Camera(FovSetting_e fov) : Camera()
 bool Camera::Initialize(D3DResources& resource)
 {
     m_Resource = &resource;
-    HRESULT result = S_OK;
     ID3D11Device* device = m_Resource->GetDevice();
     
     setWorld();

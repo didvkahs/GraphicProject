@@ -1,5 +1,8 @@
 #pragma once
 
+// TODO : (IMP) Add Animation loader
+
+
 class GLTFReader
 {
 public:
@@ -11,6 +14,7 @@ public:
 	bool GetSkins(Skin_s& skin);
 	bool GetNodes(NodeList_s& outList);
 	bool GetMeshes(MeshList_s& outList);
+	bool GetAnimations();
 
 	bool HasSkin(void);
 	bool HasAnimation(void);

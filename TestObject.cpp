@@ -118,21 +118,6 @@ void TestObject::Draw(Camera* cam)
 
 	ID3D11Buffer* projection = cam->GetCBProjection();
 	devcon->VSSetConstantBuffers(1, 1, &projection);
-
-	
-	XMMATRIX world = XMLoadFloat4x4(&m_scale);
-	world = XMMatrixTranspose(world);
-
-
-	D3D11_MAPPED_SUBRESOURCE mappedResource;
-	if (SUCCEEDED(devcon->Map(m_CBWorld, 0, D3D11_MAP_WRITE_DISCARD, 0, &mappedResource)))
-	{
-		XMFLOAT4X4 fWorld;
-		XMStoreFloat4x4(&fWorld, world);
-		memcpy(mappedResource.pData, &fWorld, sizeof(XMFLOAT4X4));
-		devcon->Unmap(m_CBWorld, 0);
-	}
-
 	devcon->VSSetConstantBuffers(2, 1, &m_CBWorld);
 
 	devcon->VSSetShader(targetVShader, nullptr, 0);
@@ -249,6 +234,10 @@ bool TestObject::createBuffer()
 		verOffset += mesh.vertexCount;
 	}
 
+	XMMATRIX scale = XMLoadFloat4x4(&m_scale);
+	scale = XMMatrixTranspose(scale);
+	XMStoreFloat4x4(&m_scale, scale);
+
 	HRESULT result = S_OK;
 
 	D3D11_BUFFER_DESC bd = {};
@@ -279,10 +268,10 @@ bool TestObject::createBuffer()
 
 	bd.ByteWidth = sizeof(XMFLOAT4X4);
 	bd.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
-	bd.Usage = D3D11_USAGE_DYNAMIC;
-	bd.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+	bd.Usage = D3D11_USAGE_DEFAULT;
+	srd.pSysMem = &m_scale;
 
-	result = device->CreateBuffer(&bd, nullptr, &m_CBWorld);
+	result = device->CreateBuffer(&bd, &srd, &m_CBWorld);
 	if (FAILED(result))
 	{
 		fprintf(stderr, "(TESTOBJ) create world buffer failed\n");
