@@ -11,14 +11,9 @@ Camera::Camera(void)
     XMVECTOR at = { 0.0f, 0.0f, 0.0f, 0.0f };
     XMVECTOR up = { 0.0f, 1.0f, 0.0f, 0.0f };
 
-    XMStoreFloat4(&m_position, eye);
+    XMStoreFloat4(&m_currPos, eye);
     XMMATRIX view = XMMatrixLookAtLH(eye, at, up);
     XMStoreFloat4x4(&m_view, view);
-
-    XMVECTOR forward = XMVector4Normalize(at - eye);
-    XMStoreFloat4(&m_forward, forward);
-    m_right = { 1.0f, 0.0f, 0.0f, 0.0f };
-    XMStoreFloat4(&m_up, up);
 
     m_fov = FOV_PC;
 }
@@ -45,63 +40,66 @@ bool Camera::Initialize(D3DResources& resource)
     return true;
 }
 
-void Camera::Update(const float& deltaTime, MoveCam_e type)
+void Camera::ProcessKeyboardInput(const float& deltaTime, MoveCam_e type)
 {
-    // NOTICE : (LATER) use this function after render GLTF model
-    // TODO : (LATER) fix this function ( lots of error )
-
     XMMATRIX rot = XMMatrixRotationRollPitchYaw(m_Pitch, m_Yaw, 0.0f);
-    
-    XMVECTOR standardForward = XMVectorSet(0.0f, 0.0f, 1.0f, 0.0f);
-    XMVECTOR standardRight = XMVectorSet(1.0f, 0.0f, 0.0f, 0.0f);
-    XMVECTOR worldUp = XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f);
-
-
-    XMVECTOR vforward = XMVector3TransformNormal(standardForward, rot);
-    XMVECTOR vright = XMVector3TransformNormal(standardRight, rot);
+    XMVECTOR vforward = XMVector3TransformNormal(XMVectorSet(0.0f, 0.0f, 1.0f, 0.0f), rot);
+    XMVECTOR vright = XMVector3TransformNormal(XMVectorSet(1.0f, 0.0f, 0.0f, 0.0f), rot);
 
     XMVECTOR vup = XMVector3Cross(vforward, vright);
     vup = XMVector3Normalize(vup);
-    
-    XMVECTOR vpos = XMLoadFloat4(&m_position);
-    
+
+    XMVECTOR vpos = XMLoadFloat4(&m_targetPos); 
+
     float speed = CAM_SPEED * deltaTime;
 
     if (type == MOV_FORWARD) vpos += vforward * speed;
-    if (type == MOV_BACK)    vpos -= vforward * speed;
+    if (type == MOV_BACK)    vpos -= vforward * speed; 
     if (type == MOV_RIGHT)   vpos += vright * speed;
     if (type == MOV_LEFT)    vpos -= vright * speed;
-    if (type == MOV_UP)      vpos += vup * speed; 
+    if (type == MOV_UP)      vpos += vup * speed;
     if (type == MOV_DOWN)    vpos -= vup * speed;
 
-    XMStoreFloat4(&m_position, vpos);
-    XMStoreFloat4(&m_forward, vforward);
-    XMStoreFloat4(&m_right, vright);
-    XMStoreFloat4(&m_up, vup);
+    XMStoreFloat4(&m_targetPos, vpos);
+}
 
-    XMMATRIX view = XMMatrixLookAtLH(vpos, XMVectorAdd(vpos, vforward), vup);
+void Camera::UpdateMatrix(const float& deltaTime)
+{
+    float interpolationFactor = 12.0f * deltaTime;
+    if (interpolationFactor > 1.0f) interpolationFactor = 1.0f;
+
+    m_currYaw = m_currYaw + (m_Yaw - m_currYaw) * interpolationFactor;
+    m_currPitch = m_currPitch + (m_Pitch - m_currPitch) * interpolationFactor;
+
+    XMVECTOR curPos = XMLoadFloat4(&m_currPos);
+    XMVECTOR tarPos = XMLoadFloat4(&m_targetPos);
+    curPos = XMVectorLerp(curPos, tarPos, interpolationFactor);
+    XMStoreFloat4(&m_currPos, curPos);
+
+    XMMATRIX rot = XMMatrixRotationRollPitchYaw(m_currPitch, m_currYaw, 0.0f);
+    XMVECTOR vforward = XMVector3TransformNormal(XMVectorSet(0.0f, 0.0f, 1.0f, 0.0f), rot);
+    XMVECTOR vup = XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f);
+
+    XMMATRIX view = XMMatrixLookAtLH(curPos, curPos + vforward, vup);
     view = XMMatrixTranspose(view);
 
-    HRESULT hr = S_OK;
     ID3D11DeviceContext* devcon = m_Resource->GetContext();
     D3D11_MAPPED_SUBRESOURCE mappedResource;
-    if (FAILED(devcon->Map(m_CBView, 0, D3D11_MAP_WRITE_DISCARD, 0, &mappedResource)))
+    if (SUCCEEDED(devcon->Map(m_CBView, 0, D3D11_MAP_WRITE_DISCARD, 0, &mappedResource)))
     {
-#ifdef _DEBUG
-        __debugbreak();
-#endif
-        fprintf(stderr, "map cbview failed with error\n");
+        XMStoreFloat4x4(static_cast<XMFLOAT4X4*>(mappedResource.pData), view);
+        devcon->Unmap(m_CBView, 0);
     }
-
-    memcpy(mappedResource.pData, &view, sizeof(XMFLOAT4X4));
-
-    devcon->Unmap(m_CBView, 0);
 }
 
 void Camera::UpdateYawPitch(const float& deltaTime, int yaw, int pitch)
 {
     m_Yaw += yaw * deltaTime * MOUSE_SPEED;
     m_Pitch += pitch * deltaTime * MOUSE_SPEED;
+
+    const float limit = XMConvertToRadians(89.0f);
+    if (m_Pitch > limit)  m_Pitch = limit;
+    if (m_Pitch < -limit) m_Pitch = -limit;
 }
 
 

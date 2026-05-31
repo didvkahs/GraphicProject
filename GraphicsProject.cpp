@@ -193,32 +193,32 @@ void Update(void)
     if (g_MoveState[MOV_MOUSE])
     {
         g_cam->UpdateYawPitch(g_DeltaTime, g_MouseX, g_MouseY);
-        g_cam->Update(g_DeltaTime, MOV_COUNT);
     }
     if (g_MoveState[MOV_DOWN])
     {
-        g_cam->Update(g_DeltaTime, MOV_DOWN);
+        g_cam->ProcessKeyboardInput(g_DeltaTime, MOV_DOWN);
     }
     if (g_MoveState[MOV_UP])
     {
-        g_cam->Update(g_DeltaTime, MOV_UP);
+        g_cam->ProcessKeyboardInput(g_DeltaTime, MOV_UP);
     }
     if (g_MoveState[MOV_FORWARD])
     {
-        g_cam->Update(g_DeltaTime, MOV_FORWARD);
+        g_cam->ProcessKeyboardInput(g_DeltaTime, MOV_FORWARD);
     }
     if (g_MoveState[MOV_BACK])
     {
-        g_cam->Update(g_DeltaTime, MOV_BACK);
+        g_cam->ProcessKeyboardInput(g_DeltaTime, MOV_BACK);
     }
     if (g_MoveState[MOV_RIGHT])
     {
-        g_cam->Update(g_DeltaTime, MOV_RIGHT);
+        g_cam->ProcessKeyboardInput(g_DeltaTime, MOV_RIGHT);
     }
     if (g_MoveState[MOV_LEFT])
     {
-        g_cam->Update(g_DeltaTime, MOV_LEFT);
+        g_cam->ProcessKeyboardInput(g_DeltaTime, MOV_LEFT);
     }
+    g_cam->UpdateMatrix(g_DeltaTime);
 }
 
 

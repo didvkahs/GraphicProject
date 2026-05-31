@@ -35,7 +35,8 @@ public:
 
 	bool Initialize(D3DResources& resource);
 
-	void Update(const float& deltaTime, MoveCam_e type);
+	void ProcessKeyboardInput(const float& deltaTime, MoveCam_e type);
+	void UpdateMatrix(const float& deltaTime);
 	void UpdateYawPitch(const float& deltaTime, int yaw, int pitch);
 	
 	void SetFov(FovSetting_e fov);
@@ -71,8 +72,6 @@ private:
 	float m_Yaw = 0.0f;
 	float m_Pitch = 0.0f;
 
-	DirectX::XMFLOAT4 m_position;
-	DirectX::XMFLOAT4 m_forward;
-	DirectX::XMFLOAT4 m_right;
-	DirectX::XMFLOAT4 m_up;
+	DirectX::XMFLOAT4 m_currPos;
+	DirectX::XMFLOAT4 m_targetPos;
 };

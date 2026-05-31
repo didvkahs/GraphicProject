@@ -20,7 +20,7 @@ private:
 	void normalizeHeight(void);
 
 private:
-	static const int NORMALIZED_CHARACTER_HEIGHT = 5;
+	static const int NORMALIZED_CHARACTER_HEIGHT = 3;
 	float m_normalHiehtScale = 0.0f;
 
 };
