@@ -5,33 +5,33 @@
 #include "GLTFReader.h"
 
 
+
 EntityResource::EntityResource(void) {}
-EntityResource::EntityResource(ModelType_e model)
+EntityResource::EntityResource(const std::string& filePath)
 {
 	m_reader = new GLTFReader();
 
-	if (!m_reader->Initialize(m_modelInfos[model].modelPath))
+	if (!m_reader->Initialize(filePath))
 	{
 #ifdef _DEBUG
 		__debugbreak();
 #endif
-		fprintf(stderr, "entityResource initialize failed with error while reading %s\n", m_modelInfos[model].modelPath);
+		fprintf(stderr, "entityResource initialize failed with error while reading %s\n", filePath);
 		exit(1);
 	}
 
 	m_reader->GetMeshes(meshList);
 	m_reader->GetNodes(nodeList);
-
-	if (m_modelInfos[model].hasSkin)
-	{
-		m_reader->GetSkins(skin);
-	}
-
-	m_model = model;
 }
 
 EntityResource::~EntityResource(void)
 {
+	if (m_reader)
+	{
+		delete[] m_reader;
+		m_reader = nullptr;
+	}
+
 	if (meshList.list != nullptr)
 	{
 		delete[] meshList.list;
@@ -45,19 +45,4 @@ EntityResource::~EntityResource(void)
 		nodeList.list = nullptr;
 		nodeList.count = 0;
 	}
-
-	if (skin.jointNodeIndices != nullptr)
-	{
-		delete[] skin.jointNodeIndices;
-		delete[] skin.invBindPoses;
-
-		skin.jointNodeIndices = nullptr;
-		skin.invBindPoses = nullptr;
-		skin.jointNodeCount = 0;
-	}
-}
-
-bool EntityResource::HasSkin(void)
-{
-	return m_modelInfos[m_model].hasSkin;
 }

@@ -3,6 +3,8 @@
 #define NOMINMAX
 
 #include <chrono>
+#include <string>
+#include <EASTL/unordered_map.h>
 
 #include "framework.h"
 #include "GraphicsProject.h"
@@ -10,10 +12,11 @@
 #include "Camera.h"
 
 #include "GLTFTypes.h"
+#include "GLTFReader.h"
 #include "EntityResource.h"
+#include "ResourceRegistery.h"
 
 #include "TestObject.h"
-
 
 
 #ifdef _DEBUG
@@ -60,9 +63,8 @@ int g_FrameCount = 0;
 D3DResources g_resource;
 Camera* g_cam = nullptr;
 
-EntityResource* g_chisaResource = nullptr;
-EntityResource* g_mudaResource = nullptr;
-EntityResource* g_dekuResource = nullptr;
+
+ResourceRegistery* g_modelRegistery = nullptr;
 
 TestObject testObject;
 
@@ -150,14 +152,11 @@ bool InitObject(void)
         goto LB_FAILED_RESOURCE_INITIALIZE;
     }
 
-    g_chisaResource = new EntityResource(MODEL_CHISA);
-    g_mudaResource = new EntityResource(MODEL_MUDA);
 
     { // Setup Camera 
         // TODO : (LATER) make camera system
 
-       
-        g_cam = new Camera();
+        g_cam = new Camera(FOV_PC);
         if (!g_cam->Initialize(g_resource))
         {
             fprintf(stderr, "cam initialization failed with error\n");
@@ -165,24 +164,12 @@ bool InitObject(void)
         }
     }
 
-    if (!testObject.Initialize(g_resource, *g_mudaResource))
+    g_modelRegistery = new ResourceRegistery();
+
+    if (!testObject.Initialize(g_resource, g_modelRegistery->GetResource("skeleton")))
     {
         fprintf(stderr, "testObject initialization failed with error\n");
         goto LB_FAILED_TESTOBJ_INITIALIZE;
-    }
-   
-    {
-        RECT rect;
-        
-        GetClientRect(hWnd, &rect);
-        g_MouseCenter.x = (rect.right - rect.left) / 2;
-        g_MouseCenter.y = (rect.bottom - rect.top) / 2;
-        ClientToScreen(hWnd, &g_MouseCenter);
-        SetCursorPos(g_MouseCenter.x, g_MouseCenter.y);
-
-        g_MoveState[MOV_MOUSE] = false;
-        g_MouseX = g_MouseCenter.x;
-        g_MouseY = g_MouseCenter.y;
     }
 
 
@@ -203,6 +190,11 @@ LB_FAILED_RESOURCE_INITIALIZE:
 
 void Update(void)
 {
+    if (g_MoveState[MOV_MOUSE])
+    {
+        g_cam->UpdateYawPitch(g_DeltaTime, g_MouseX, g_MouseY);
+        g_cam->Update(g_DeltaTime, MOV_COUNT);
+    }
     if (g_MoveState[MOV_DOWN])
     {
         g_cam->Update(g_DeltaTime, MOV_DOWN);
@@ -226,11 +218,6 @@ void Update(void)
     if (g_MoveState[MOV_LEFT])
     {
         g_cam->Update(g_DeltaTime, MOV_LEFT);
-    }
-    if (g_MoveState[MOV_MOUSE])
-    {
-        g_cam->UpdateYawPitch(g_DeltaTime, g_MouseX, g_MouseY);
-        g_cam->Update(g_DeltaTime, MOV_COUNT);
     }
 }
 
@@ -258,6 +245,8 @@ void RenderFrame(void)
 void CloseObjectHandles(void)
 {
     g_resource.CloseD3DHandles();
+
+    delete g_modelRegistery;
 }
 
 

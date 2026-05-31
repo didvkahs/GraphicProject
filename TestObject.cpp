@@ -1,40 +1,56 @@
 #include <cstdint>
 
 #include "D3DResources.h"
-#include "GLTFTypes.h"
 #include "Camera.h"
+
+#include "GLTFTypes.h"
 
 #include "TestObject.h"
 
+#include "GLTFReader.h"
 #include "EntityResource.h"
+#include "CharacterResource.h"
 
 #include <iostream>
 
 using namespace DirectX;
 
 
-constexpr int IMG_WIDTH = 512;
-constexpr int IMG_HEIGHT = 512;
+TestObject::TestObject(void) : IEntity()
+{
+	m_IndexCount = 0;
+	m_VertexCount = 0;
 
+	XMStoreFloat4x4(&m_World, XMMatrixIdentity());
+		
+	for (int i = 0; i < VS_COUNT; ++i)
+	{
+		m_vsIDs[i] = VS_NON;
+		m_psIDs[i] = PS_NON;
+	}
+}
+TestObject::~TestObject(void){}
 
-
-TestObject::TestObject(void) {}
-TestObject::~TestObject(void) {}
-
-bool TestObject::Initialize(D3DResources& resource, EntityResource& entityResource)
+bool TestObject::Initialize(D3DResources& resource, EntityResource*entityResource)
 {
 	m_Resource = resource;
 	
-	int meshCount = entityResource.meshList.count;
-	m_meshList.list = new Mesh_s[meshCount];
-	m_meshList.count = meshCount;
-	memcpy(m_meshList.list, entityResource.meshList.list, sizeof(Mesh_s) * meshCount);
+	m_SRVs = new ID3D11ShaderResourceView*[VS_COUNT];
 
-	int nodeCount = entityResource.nodeList.count;
-	m_nodeList.list = new Node_s[nodeCount];
-	m_nodeList.count = nodeCount;
-	memcpy(m_nodeList.list, entityResource.nodeList.list, sizeof(Node_s) * nodeCount);
+	CharacterResource* child = dynamic_cast<CharacterResource*>(entityResource);
 
+
+	int meshCount = child->meshList.count;
+	m_MeshList.list = new Mesh_s[meshCount];
+	m_MeshList.count = meshCount;
+	memcpy(m_MeshList.list, child->meshList.list, sizeof(Mesh_s) * meshCount);
+
+	int nodeCount = child->nodeList.count;
+	m_NodeList.list = new Node_s[nodeCount];
+	m_NodeList.count = nodeCount;
+	memcpy(m_NodeList.list, child->nodeList.list, sizeof(Node_s) * nodeCount);
+
+	m_scale = child->scale;
 
 	if (!createBuffer())
 	{
@@ -56,6 +72,8 @@ LB_FAILED_CREATE_INPUTLAYOUT:
 		SAFE_RELEASE(m_SRVs[i])
 		m_SRVs[i] = nullptr;
 	}
+	delete[] m_SRVs;
+	m_SRVs = nullptr;
 
 LB_FAILED_CREATE_SRVIEW:
 	SAFE_RELEASE(m_VertexBuffer);
@@ -101,8 +119,21 @@ void TestObject::Draw(Camera* cam)
 	ID3D11Buffer* projection = cam->GetCBProjection();
 	devcon->VSSetConstantBuffers(1, 1, &projection);
 
-	ID3D11Buffer* world = cam->GetCBWorld();
-	devcon->VSSetConstantBuffers(2, 1, &world);
+	
+	XMMATRIX world = XMLoadFloat4x4(&m_scale);
+	world = XMMatrixTranspose(world);
+
+
+	D3D11_MAPPED_SUBRESOURCE mappedResource;
+	if (SUCCEEDED(devcon->Map(m_CBWorld, 0, D3D11_MAP_WRITE_DISCARD, 0, &mappedResource)))
+	{
+		XMFLOAT4X4 fWorld;
+		XMStoreFloat4x4(&fWorld, world);
+		memcpy(mappedResource.pData, &fWorld, sizeof(XMFLOAT4X4));
+		devcon->Unmap(m_CBWorld, 0);
+	}
+
+	devcon->VSSetConstantBuffers(2, 1, &m_CBWorld);
 
 	devcon->VSSetShader(targetVShader, nullptr, 0);
 	devcon->PSSetShader(targetPShader, nullptr, 0);
@@ -112,7 +143,7 @@ void TestObject::Draw(Camera* cam)
 	devcon->DrawIndexed(m_IndexCount, 0, 0);
 }
 
-void TestObject::CloseObjectHandles(void)
+void TestObject::CloseIEntityHandles(void)
 {
 	SAFE_RELEASE(m_InputLayout);
 
@@ -121,22 +152,25 @@ void TestObject::CloseObjectHandles(void)
 		SAFE_RELEASE(m_SRVs[i])
 		m_SRVs[i] = nullptr;
 	}
+	delete[] m_SRVs;
+	m_SRVs = nullptr;
 
 	SAFE_RELEASE(m_VertexBuffer);
 	SAFE_RELEASE(m_IndexBuffer);
+	SAFE_RELEASE(m_CBWorld);
 
-	if (m_meshList.list)
+	if (m_MeshList.list)
 	{
-		delete[] m_meshList.list;
-		m_meshList.list = nullptr;
-		m_meshList.count = 0;
+		delete[] m_MeshList.list;
+		m_MeshList.list = nullptr;
+		m_MeshList.count = 0;
 	}
 
-	if (m_nodeList.list)
+	if (m_NodeList.list)
 	{
-		delete[] m_nodeList.list;
-		m_nodeList.list = nullptr;
-		m_nodeList.count = 0;
+		delete[] m_NodeList.list;
+		m_NodeList.list = nullptr;
+		m_NodeList.count = 0;
 	}
 
 	if (m_IndexCount) 
@@ -178,7 +212,7 @@ bool TestObject::setupD3D(void)
 bool TestObject::createBuffer()
 {
 	ID3D11Device* device = m_Resource.GetDevice();	
-	MeshList_s meshList = m_meshList;
+	MeshList_s meshList = m_MeshList;
 
 	for (int i = 0; i < meshList.count; ++i)
 	{
@@ -229,7 +263,7 @@ bool TestObject::createBuffer()
 	if (FAILED(result))
 	{
 		fprintf(stderr, "(TESTOBJ) create vertexBuffer failed\n");
-		return false;
+		goto LB_FAILED_CREATE_VERTEX_BUFFER;
 	}
 
 	bd.ByteWidth = sizeof(uint32_t) * m_IndexCount;
@@ -240,9 +274,35 @@ bool TestObject::createBuffer()
 	if (FAILED(result))
 	{
 		fprintf(stderr, "(TESTOBJ) create indexBuffer failed\n");
-		return false;
+		goto LB_FAILED_CREATE_INDEX_BUFFER;
 	}
+
+	bd.ByteWidth = sizeof(XMFLOAT4X4);
+	bd.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
+	bd.Usage = D3D11_USAGE_DYNAMIC;
+	bd.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+
+	result = device->CreateBuffer(&bd, nullptr, &m_CBWorld);
+	if (FAILED(result))
+	{
+		fprintf(stderr, "(TESTOBJ) create world buffer failed\n");
+		goto LB_FAILED_CREATE_WORLD_BUFFER;
+	}
+
+
 	return true;
+
+	LB_FAILED_CREATE_WORLD_BUFFER:
+	m_IndexBuffer->Release();
+	m_IndexBuffer = nullptr;
+
+	LB_FAILED_CREATE_INDEX_BUFFER:
+	m_VertexBuffer->Release();
+	m_VertexBuffer = nullptr;
+
+	LB_FAILED_CREATE_VERTEX_BUFFER:
+
+	return false;
 }
 
 bool TestObject::createSRView(void)
@@ -251,7 +311,7 @@ bool TestObject::createSRView(void)
 
 	HRESULT result = S_OK;
 
-	int meshCount = m_meshList.count;
+	int meshCount = m_MeshList.count;
 
 	ID3D11Device* device = m_Resource.GetDevice();
 
@@ -297,55 +357,4 @@ bool TestObject::createSRView(void)
 	result = device->CreateShaderResourceView(texture, &srvd, &m_SRVs[VS_DEFAULT]);
 
 	return true;
-}
-
-
-inline std::wstring stows(const std::string input);
-
-bool TestObject::loadTexture(const char* inFileName, DirectX::ScratchImage& image, DirectX::TexMetadata& metaData)
-{
-	HRESULT result = S_OK;
-
-	D3D11_SUBRESOURCE_DATA srd = {};
-	ID3D11Texture2D* texture = nullptr;
-
-	std::string input = inFileName;
-	std::wstring fileName = stows(input);
-	size_t pos = fileName.find(L".", 1);
-	
-	std::wstring fileType = fileName.substr(pos);
-
-	if (L".dds" == fileType)
-	{
-		result = LoadFromDDSFile(fileName.c_str(), DDS_FLAGS_NONE, &metaData, image);
-	}
-	else if (L".tgs" == fileType)
-	{
-		result = LoadFromTGAFile(fileName.c_str(), &metaData, image);
-	}
-	else if (L".hdr" == fileType)
-	{
-		result = LoadFromHDRFile(fileName.c_str(), &metaData, image);
-	}
-	else
-	{
-		result = LoadFromWICFile(fileName.c_str(), WIC_FLAGS_NONE, &metaData, image);
-	}
-
-	if (FAILED(result))
-	{
-		fprintf(stderr, "loadTexture form %s failed", inFileName);
-		return false;
-	}
-
-	return true;
-}
-
-inline std::wstring stows(const std::string input)
-{
-	int inputLen = MultiByteToWideChar(CP_UTF8, 0, input.c_str(), (int)input.size(), nullptr, 0);
-	std::wstring wstr(inputLen, 0);
-	MultiByteToWideChar(CP_UTF8, 0, input.c_str(), (int)input.size(), &wstr[0], inputLen);
-
-	return wstr;
 }

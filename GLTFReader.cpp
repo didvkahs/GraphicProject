@@ -20,8 +20,11 @@ using namespace DirectX;
 using namespace Microsoft::glTF;
 using namespace std;
 
-Microsoft::glTF::Document g_Document;
-std::unique_ptr<Microsoft::glTF::GLTFResourceReader> g_ResourceReader;
+namespace
+{
+	Microsoft::glTF::Document g_Document;
+	std::unique_ptr<Microsoft::glTF::GLTFResourceReader> g_ResourceReader;
+}
 
 const std::string BIN_PREFIX = ".//assets//Models//";
 
@@ -87,13 +90,47 @@ bool GLTFReader::Initialize(const std::string& filePath)
 	}
 
 	g_Document = Deserialize(content);
-
+	
 	return true;
 }
 
 
 
 
+
+bool GLTFReader::GetSkins(Skin_s& outList)
+{
+	const Skin& skin = g_Document.skins.Get(0);
+	std::vector<float> invMatData;
+
+	if (!skin.inverseBindMatricesAccessorId.empty())
+	{
+		const std::string invMatID = skin.inverseBindMatricesAccessorId;
+		const Accessor& invAcc = g_Document.accessors.Get(invMatID);
+
+		invMatData = g_ResourceReader->ReadFloatData(g_Document, invAcc);
+	}
+
+	const int jointCount = skin.jointIds.size();
+	outList.jointNodeCount = jointCount;
+	outList.jointNodeIndices = new int[outList.jointNodeCount];
+	outList.invBindPoses = new XMFLOAT4X4[outList.jointNodeCount];
+
+	for (int i = 0; i < jointCount; ++i)
+	{
+		XMFLOAT4X4& dstInvMat = outList.invBindPoses[i];
+		int& dstJointNode = outList.jointNodeIndices[i];
+
+		if (!invMatData.empty())
+		{
+			memcpy(&dstInvMat, &invMatData.at(i * 16), sizeof(float) * 16);
+		}
+
+		dstJointNode = std::stoi(skin.jointIds.at(i));
+	}
+
+	return true;
+}
 
 
 bool GLTFReader::GetNodes(NodeList_s& outList)
@@ -263,28 +300,32 @@ bool GLTFReader::GetMeshes(MeshList_s& outList)
 
 
 
-		for (int i = 0; i < dstMesh.vertexCount; ++i)
+		for (int j = 0; j < dstMesh.vertexCount; ++j)
 		{
-			ModelVertex_s& vertex = dstMesh.vertices[i];
+			ModelVertex_s& vertex = dstMesh.vertices[j];
 
 			if (!posData.empty())
 			{
-				vertex.position = { posData.at(i * 3), posData.at(i * 3 + 1), posData.at(i * 3 + 2), 1.0f };
+				vertex.position = { posData.at(j * 3), posData.at(j * 3 + 1), posData.at(j * 3 + 2), 1.0f };
 			}
 
 			if (!norData.empty())
 			{
-				vertex.normal = { norData.at(i * 3), norData.at(i * 3 + 1), norData.at(i * 3 + 2), 0.0f };
+				vertex.normal = { norData.at(j * 3), norData.at(j * 3 + 1), norData.at(j * 3 + 2), 0.0f };
 			}
 
 			if (!texData.empty())
 			{
-				vertex.uv = { texData.at(i * 2), texData.at(i * 2 + 1) };
+				vertex.uv = { texData.at(j * 2), texData.at(j * 2 + 1) };
 			}
 
-			if (!jointsData.empty())
+			if (!jointsData.empty() && (j * 4 + 3) < jointsData.size())
 			{
-				vertex.joints = { jointsData.at(i * 3), jointsData.at(i * 3 + 1), jointsData.at(i * 3 + 2), 1 };
+				vertex.joints = { jointsData.at(j * 3), jointsData.at(j * 3 + 1), jointsData.at(j * 3 + 2), 1 };
+			}
+			else
+			{
+				vertex.joints = { 0, 0, 0, 0};
 			}
 		}
 
@@ -301,42 +342,18 @@ bool GLTFReader::GetMeshes(MeshList_s& outList)
 }
 
 
-bool GLTFReader::GetSkins(Skin_s& outList)
+
+
+
+
+bool GLTFReader::HasSkin(void)
 {
-	if (!g_Document.skins.Size())
-	{
-		fprintf(stderr, "skin size is 0 : FILE_NOT_CONTAIN_SKIN | NO_JOINT \n");
-		return false;
-	}
+	m_hasSkin = g_Document.skins.Size();
+	return m_hasSkin;
+}
 
-	const Skin& skin = g_Document.skins.Get(0);
-	std::vector<float> invMatData;
-
-	if (!skin.inverseBindMatricesAccessorId.empty())
-	{
-		const std::string invMatID = skin.inverseBindMatricesAccessorId;
-		const Accessor& invAcc = g_Document.accessors.Get(invMatID);
-
-		invMatData = g_ResourceReader->ReadFloatData(g_Document, invAcc);
-	}
-	
-	const int jointCount = skin.jointIds.size();
-	outList.jointNodeCount = jointCount;
-	outList.jointNodeIndices = new int[outList.jointNodeCount];
-	outList.invBindPoses = new XMFLOAT4X4[outList.jointNodeCount];
-
-	for (int i = 0; i < jointCount; ++i)
-	{
-		XMFLOAT4X4& dstInvMat = outList.invBindPoses[i];
-		int& dstJointNode = outList.jointNodeIndices[i];
-
-		if (!invMatData.empty())
-		{
-			memcpy(&dstInvMat, &invMatData.at(i * 16), sizeof(float) * 16);
-		}
-
-		dstJointNode = std::stoi(skin.jointIds.at(i));
-	}
-
-	return true;
+bool GLTFReader::HasAnimation(void)
+{
+	m_hasAnimation = g_Document.animations.Size();
+	return m_hasAnimation;
 }

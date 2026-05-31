@@ -5,7 +5,6 @@
 
 using namespace DirectX;
 
-
 Camera::Camera(void)
 {
     XMVECTOR eye = { 0.0f, 0.0f, -3.0f, 0.0f };
@@ -15,11 +14,18 @@ Camera::Camera(void)
     XMStoreFloat4(&m_position, eye);
     XMMATRIX view = XMMatrixLookAtLH(eye, at, up);
     XMStoreFloat4x4(&m_view, view);
-    
+
     XMVECTOR forward = XMVector4Normalize(at - eye);
     XMStoreFloat4(&m_forward, forward);
     m_right = { 1.0f, 0.0f, 0.0f, 0.0f };
     XMStoreFloat4(&m_up, up);
+
+    m_fov = FOV_PC;
+}
+
+Camera::Camera(FovSetting_e fov) : Camera()
+{
+    m_fov = fov;
 }
 
 
@@ -100,9 +106,14 @@ void Camera::UpdateYawPitch(const float& deltaTime, int yaw, int pitch)
 }
 
 
-ID3D11Buffer* Camera::GetCBWorld(void) const
+void Camera::SetFov(FovSetting_e fov)
 {
-    return m_CBWorld;
+    m_fov = fov;
+}
+
+XMMATRIX Camera::GetWorldMat(void) const
+{
+    return XMLoadFloat4x4(&m_world);
 }
 
 ID3D11Buffer* Camera::GetCBView(void) const
@@ -117,12 +128,6 @@ ID3D11Buffer* Camera::GetCBProjection(void) const
 
 void Camera::CloseCameraHandles(void)
 {
-    if (m_CBWorld)
-    {
-        m_CBWorld->Release();
-        m_CBWorld = nullptr;
-    }
-
     if (m_CBView)
     {
         m_CBView->Release();
@@ -149,7 +154,7 @@ void Camera::setWorld(void)
 
 void Camera::setProjection(void)
 {
-    float fovAngleY = XMConvertToRadians(45.0f);
+    float fovAngleY = XMConvertToRadians((float)m_fov);
     float aspectRatio = static_cast<float>(m_Resource->GetWidth()) / static_cast<float>(m_Resource->GetHeight());
 
     float nearz = 0.1f;
@@ -171,9 +176,6 @@ bool Camera::createBuffer(void)
     bd.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
 
     D3D11_SUBRESOURCE_DATA srd = {};
-    
-    XMMATRIX tWorld= XMLoadFloat4x4(&m_world);
-    tWorld = XMMatrixTranspose(tWorld);
 
     XMMATRIX tView = XMLoadFloat4x4(&m_view);
     tView = XMMatrixTranspose(tView);
@@ -181,15 +183,6 @@ bool Camera::createBuffer(void)
     XMMATRIX tProj = XMLoadFloat4x4(&m_projection);
     tProj = XMMatrixTranspose(tProj);
 
-
-    srd.pSysMem = &tWorld;
-    
-    result = device->CreateBuffer(&bd, &srd, &m_CBWorld);
-    if (FAILED(result))
-    {
-        fprintf(stderr, "create world constBuffer failed with error\n");
-        goto LB_FAILED_CREATE_CBWORLD;
-    }
 
     XMFLOAT4X4 ftproj;
     XMStoreFloat4x4(&ftproj, tProj);
@@ -225,9 +218,5 @@ LB_FAILED_CREAET_CBVIEW:
     m_CBProjection = nullptr;
 
 LB_FAILED_CREATE_CBPROJECTION:
-    m_CBWorld->Release();
-    m_CBWorld = nullptr;
-
-LB_FAILED_CREATE_CBWORLD:
     return false;
 }
